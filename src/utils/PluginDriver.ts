@@ -80,6 +80,13 @@ export class PluginDriver {
 	private readonly sortedPlugins = new Map<AsyncPluginHooks, Plugin[]>();
 	private readonly unfulfilledActions = new Set<HookAction>();
 
+	/**
+	 * @param graph 依赖图对象
+	 * @param options rollup 配置项
+	 * @param userPlugins 用户定义的插件列表
+	 * @param pluginCache 插件缓存
+	 * @param basePluginDriver
+	 */
 	constructor(
 		private readonly graph: Graph,
 		private readonly options: NormalizedInputOptions,
@@ -88,6 +95,8 @@ export class PluginDriver {
 		basePluginDriver?: PluginDriver
 	) {
 		warnDeprecatedHooks(userPlugins, options);
+
+		// 文件生产器
 		this.fileEmitter = new FileEmitter(
 			graph,
 			options,
@@ -97,9 +106,12 @@ export class PluginDriver {
 		this.getFileName = this.fileEmitter.getFileName.bind(this.fileEmitter);
 		this.finaliseAssets = this.fileEmitter.assertAssetsFinalized.bind(this.fileEmitter);
 		this.setOutputBundle = this.fileEmitter.setOutputBundle.bind(this.fileEmitter);
+
+		// 需要应用的所有插件
 		this.plugins = userPlugins.concat(basePluginDriver ? basePluginDriver.plugins : []);
 		const existingPluginNames = new Set<string>();
 
+		// 插件执行上下文
 		this.pluginContexts = new Map(
 			this.plugins.map(plugin => [
 				plugin,

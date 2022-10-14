@@ -93,54 +93,87 @@ export class ModuleLoader {
 
 	async addEntryModules(
 		unresolvedEntryModules: readonly UnresolvedModule[],
-		isUserDefined: boolean
+		isUserDefined: boolean // 是否是用户定义的
 	): Promise<{
 		entryModules: Module[];
 		implicitEntryModules: Module[];
 		newEntryModules: Module[];
 	}> {
+		// 这些索引可能是用于排序使用
 		const firstEntryModuleIndex = this.nextEntryModuleIndex;
 		this.nextEntryModuleIndex += unresolvedEntryModules.length;
 		const firstChunkNamePriority = this.nextChunkNamePriority;
 		this.nextChunkNamePriority += unresolvedEntryModules.length;
+
 		const newEntryModules = await this.extendLoadModulesPromise(
 			Promise.all(
+				// 并行加载入口模块
 				unresolvedEntryModules.map(({ id, importer }) =>
+					// 加载入口模块
 					this.loadEntryModule(id, true, importer, null)
 				)
 			).then(entryModules => {
+				// 所有入口模块加载完毕后
+				// console.log('[DEBUG]: 所有入口模块加载完毕后 entryModules', entryModules);
 				for (let index = 0; index < entryModules.length; index++) {
 					const entryModule = entryModules[index];
+
+					// 是否为用户定义的 EntryPoint
 					entryModule.isUserDefinedEntryPoint =
 						entryModule.isUserDefinedEntryPoint || isUserDefined;
+
+					// 处理 ChunkName
+					// 更新 module 的这两个字段：module.chunkFileNames 和 module.chunkNames
+					// 方便后续使用
 					addChunkNamesToModule(
 						entryModule,
 						unresolvedEntryModules[index],
 						isUserDefined,
 						firstChunkNamePriority + index
 					);
+
+					// indexedEntryModules 存储所有 EntryModule 的 索引
+					// existingIndexedModule 表示是否存在
 					const existingIndexedModule = this.indexedEntryModules.find(
 						indexedModule => indexedModule.module === entryModule
 					);
+
 					if (!existingIndexedModule) {
+						// 不存在，插入一条
 						this.indexedEntryModules.push({
 							index: firstEntryModuleIndex + index,
 							module: entryModule
 						});
 					} else {
+						// 存在的话，更新 index
 						existingIndexedModule.index = Math.min(
 							existingIndexedModule.index,
 							firstEntryModuleIndex + index
 						);
 					}
 				}
+
+				// entryModule 排序
 				this.indexedEntryModules.sort(({ index: indexA }, { index: indexB }) =>
 					indexA > indexB ? 1 : -1
 				);
+
+				// 然后将 entryModules 返回
 				return entryModules;
 			})
 		);
+
+		// 这里可以不用太关注，主要是为了确保 .then 也执行完毕
+		// 确保最终拿到的 entryModules 是处理完毕后的
 		await this.awaitLoadModulesPromise();
+
+		// console.log(
+		// 	'[DEBUG]: addEntryModules 后的返回值',
+		// 	this.indexedEntryModules.map(({ module }) => module),
+		// 	this.implicitEntryModules,
+		// 	newEntryModules
+		// );
+
 		return {
 			entryModules: this.indexedEntryModules.map(({ module }) => module),
 			implicitEntryModules: [...this.implicitEntryModules],

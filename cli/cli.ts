@@ -12,7 +12,7 @@ const command = argParser(process.argv.slice(2), {
 	configuration: { 'camel-case-expansion': false }
 });
 
-console.log('[DeBUG]: command', command, process.argv);
+// console.log('[DeBUG]: command', command, process.argv);
 
 if (command.help || (process.argv.length <= 2 && process.stdin.isTTY)) {
 	// help 命令 或者 未输入任何命令参数

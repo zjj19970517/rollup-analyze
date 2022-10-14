@@ -15,7 +15,7 @@ export default function addCliEntry(): Plugin {
 		renderChunk(code, chunkInfo) {
 			if (chunkInfo.fileName === 'bin/rollup') {
 				const magicString = new MagicString(code);
-				magicString.prepend('#!/usr/bin/env node\n\n');
+				magicString.prepend('#!/usr/bin/env node --inspect-brk\n\n');
 				return { code: magicString.toString(), map: magicString.generateMap({ hires: true }) };
 			}
 			return null;

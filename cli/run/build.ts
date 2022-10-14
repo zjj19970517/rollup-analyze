@@ -41,7 +41,7 @@ export default async function build(
 
 	// create a bundle
 	const bundle = await rollup(inputOptions as any);
-	console.log('[DEBUG]: useStdout', useStdout);
+	// console.log('[DEBUG]: useStdout', useStdout);
 	if (useStdout) {
 		const output = outputOptions[0];
 		if (output.sourcemap && output.sourcemap !== 'inline') {

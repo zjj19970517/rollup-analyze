@@ -28,24 +28,38 @@ import type {
 } from './types';
 import { OutputBundle } from './types';
 
+/**
+ * rollup.rollup()
+ * @param rawInputOptions 输入的配置对象
+ * @returns 返回 bundle
+ */
 export default function rollup(rawInputOptions: GenericConfigObject): Promise<RollupBuild> {
 	return rollupInternal(rawInputOptions, null);
 }
 
+/**
+ * 这里传入的是自定义的 rollup 配置
+ * @param rawInputOptions
+ * @param watcher
+ * @returns
+ */
 export async function rollupInternal(
 	rawInputOptions: GenericConfigObject,
 	watcher: RollupWatcher | null
 ): Promise<RollupBuild> {
+	// 通过 getInputOptions 标准化 input 配置选项内容
 	const { options: inputOptions, unsetOptions: unsetInputOptions } = await getInputOptions(
 		rawInputOptions,
 		watcher !== null
 	);
 	initialiseTimers(inputOptions);
 
+	// 全局唯一的图，包含入口以及各种依赖的相互关系，操作方法，缓存等。
+	// Graph 是 rollup 的核心
 	const graph = new Graph(inputOptions, watcher);
 
 	// remove the cache option from the memory after graph creation (cache is not used anymore)
-	const useCache = rawInputOptions.cache !== false;
+	const useCache = rawInputOptions.cache !== false; // 是否使用缓存
 	delete inputOptions.cache;
 	delete rawInputOptions.cache;
 
@@ -53,6 +67,7 @@ export async function rollupInternal(
 
 	await catchUnfinishedHookActions(graph.pluginDriver, async () => {
 		try {
+			// 开始构建：buildStart 钩子触发
 			await graph.pluginDriver.hookParallel('buildStart', [inputOptions]);
 			await graph.build();
 		} catch (err: any) {
@@ -60,15 +75,19 @@ export async function rollupInternal(
 			if (watchFiles.length > 0) {
 				err.watchFiles = watchFiles;
 			}
+			// 异常构建结束：buildEnd 钩子触发
 			await graph.pluginDriver.hookParallel('buildEnd', [err]);
+			// 构建关闭：closeBundle 钩子触发
 			await graph.pluginDriver.hookParallel('closeBundle', []);
 			throw err;
 		}
+		// 正常构建结束：buildEnd 钩子触发
 		await graph.pluginDriver.hookParallel('buildEnd', []);
 	});
 
 	timeEnd('BUILD', 1);
 
+	// result 是 rollup.rollup 的返回结果，返回一个 bundler
 	const result: RollupBuild = {
 		cache: useCache ? graph.getCache() : undefined,
 		async close() {

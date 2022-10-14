@@ -70,7 +70,7 @@ async function loadConfigFile(
 			: extension === '.cjs'
 			? getDefaultFromCjs(require(fileName))
 			: (await import(pathToFileURL(fileName).href)).default;
-	console.log('[DEBUG]: configFileExport', configFileExport);
+	// console.log('[DEBUG]: configFileExport', configFileExport);
 
 	// configFileExport 是文件导出的内容，可能是 对象 也可能是一个 函数
 	return getConfigList(configFileExport, commandOptions);

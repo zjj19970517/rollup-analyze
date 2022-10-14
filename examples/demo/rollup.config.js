@@ -6,7 +6,7 @@ const resolve = function (...args) {
 
 export default {
 	input: {
-		'index.js': resolve('./index1.js')
+		'index.js': resolve('./index.js')
 	},
 	output: {
 		dir: resolve('./dist'),
