@@ -43,7 +43,7 @@ export default async function transform(
 	function transformReducer(
 		this: PluginContext,
 		previousCode: string,
-		result: TransformResult,
+		result: TransformResult, // 插件转换后的代码结果
 		plugin: Plugin
 	): string {
 		let code: string;
@@ -84,6 +84,7 @@ export default async function transform(
 			'transform',
 			[curSource, id],
 			transformReducer,
+			// TransformPluginContext 顾名思义，这个是为插件服务的上下文对象
 			(pluginContext, plugin): TransformPluginContext => {
 				pluginName = plugin.name;
 				return {

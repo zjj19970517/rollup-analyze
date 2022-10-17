@@ -14,3 +14,5 @@ export function logB() {
 setTimeout(() => {
 	dy();
 });
+
+export default name;

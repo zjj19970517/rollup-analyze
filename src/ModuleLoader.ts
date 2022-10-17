@@ -281,6 +281,11 @@ export class ModuleLoader {
 		timeStart('load modules', 3);
 		let source: LoadResult;
 		try {
+			// source 是解析后的模块源码内容
+
+			// fileOperationQueue 是一个异步任务执行队列
+			// this.pluginDriver.hookFirst('load', [id])) 调用所有监听有 load 事件的插件执行 ==> 插件会返回处理后的结果
+			// 如果没有插件 fs.readFile(id, 'utf8') 直接读取文件内容作为源码
 			source = await this.graph.fileOperationQueue.run(
 				async () =>
 					(await this.pluginDriver.hookFirst('load', [id])) ?? (await fs.readFile(id, 'utf8'))
@@ -294,6 +299,8 @@ export class ModuleLoader {
 			throw err;
 		}
 		timeEnd('load modules', 3);
+
+		// 构造 sourceDescription 对象  { code: source }
 		const sourceDescription =
 			typeof source === 'string'
 				? { code: source }
@@ -323,10 +330,18 @@ export class ModuleLoader {
 			}
 			module.setSource(cachedModule);
 		} else {
+			// 重点看这里
 			module.updateOptions(sourceDescription);
-			module.setSource(
-				await transform(sourceDescription, module, this.pluginDriver, this.options.onwarn)
+
+			// 完成模块源码的转换 transform
+			const transformSource = await transform(
+				sourceDescription,
+				module,
+				this.pluginDriver,
+				this.options.onwarn
 			);
+			// 将 transform 后的源码内容更新到 module 中
+			module.setSource(transformSource);
 		}
 	}
 
@@ -349,6 +364,7 @@ export class ModuleLoader {
 		return loadNewModulesPromise;
 	}
 
+	// 解析异步依赖
 	private async fetchDynamicDependencies(
 		module: Module,
 		resolveDynamicImportPromises: readonly ResolveDynamicDependencyPromise[]
@@ -356,11 +372,15 @@ export class ModuleLoader {
 		const dependencies = await Promise.all(
 			resolveDynamicImportPromises.map(resolveDynamicImportPromise =>
 				resolveDynamicImportPromise.then(async ([dynamicImport, resolvedId]) => {
+					// dynamicImport：动态导入对象
+					// resolvedId resolve 后的产物
 					if (resolvedId === null) return null;
 					if (typeof resolvedId === 'string') {
 						dynamicImport.resolution = resolvedId;
 						return null;
 					}
+
+					// 解析 Resolve 过后的 依赖
 					return (dynamicImport.resolution = await this.fetchResolvedDependency(
 						relativeId(resolvedId.id),
 						module.id,
@@ -369,8 +389,11 @@ export class ModuleLoader {
 				})
 			)
 		);
+
+		// 遍历所有的异步依赖
 		for (const dependency of dependencies) {
 			if (dependency) {
+				// module 和 dynamicDependencies 建立关系
 				module.dynamicDependencies.add(dependency);
 				dependency.dynamicImporters.push(module.id);
 			}
@@ -386,12 +409,16 @@ export class ModuleLoader {
 		isEntry: boolean,
 		isPreload: PreloadType
 	): Promise<Module> {
+		// 通过模块ID找到对应的 Module
 		const existingModule = this.modulesById.get(id);
+
+		// 如果已经 load 过了就直接返回
 		if (existingModule instanceof Module) {
 			await this.handleExistingModule(existingModule, isEntry, isPreload);
 			return existingModule;
 		}
 
+		// 新实例化一个 Module
 		const module = new Module(
 			this.graph,
 			id,
@@ -401,22 +428,50 @@ export class ModuleLoader {
 			syntheticNamedExports,
 			meta
 		);
+
+		// modulesById 中记录下
 		this.modulesById.set(id, module);
 		this.graph.watchFiles[id] = true;
-		const loadPromise: LoadModulePromise = this.addModuleSource(id, importer, module).then(() => [
-			this.getResolveStaticDependencyPromises(module),
-			this.getResolveDynamicImportPromises(module),
-			loadAndResolveDependenciesPromise
-		]);
-		const loadAndResolveDependenciesPromise = waitForDependencyResolution(loadPromise).then(() =>
-			this.pluginDriver.hookParallel('moduleParsed', [module.info])
-		);
+
+		// 先执行 addModuleSource
+		// addModuleSource 顾名思义，就是添加源码的意思
+		// addModuleSource 内部其实就是赋值 module.info.code 等
+		// addModuleSource 拿到源码和 transform 后的代码后，执行 .then 后面的任务
+		const loadPromise: LoadModulePromise = this.addModuleSource(id, importer, module).then(() => {
+			// 完成对模块所有静态依赖的 resolve
+			const StaticDependency = this.getResolveStaticDependencyPromises(module);
+			// 完成对模块所有异步依赖的 resolve
+			const DynamicImport = this.getResolveDynamicImportPromises(module);
+			return [StaticDependency, DynamicImport, loadAndResolveDependenciesPromise];
+		});
+
+		const loadAndResolveDependenciesPromise = waitForDependencyResolution(loadPromise).then(() => {
+			// loadPromise 执行完毕后
+			// 回调插件钩子函数 moduleParsed，表示模块解析完毕
+			// hookParallel 会获取到所有监听了 moduleParsed 的插件列表
+			// 调用 pluginDriver.runHook 执行插件的代码，最终的到的是一个 parallelPromises 异步任务
+			return this.pluginDriver.hookParallel('moduleParsed', [module.info]);
+		});
+
 		loadAndResolveDependenciesPromise.catch(() => {
 			/* avoid unhandled promise rejections */
 		});
+
 		this.moduleLoadPromises.set(module, loadPromise);
+
 		const resolveDependencyPromises = await loadPromise;
+
+		// resolveDependencyPromises 得到的是
+		// Promise<
+		//   [
+		//     resolveStaticDependencies: ResolveStaticDependencyPromise[],
+		//     resolveDynamicDependencies: ResolveDynamicDependencyPromise[],
+		//     loadAndResolveDependencies: Promise<void>
+		//   ]
+		// >
+
 		if (!isPreload) {
+			// 当前模块解析完毕后，开始解析其依赖
 			await this.fetchModuleDependencies(module, ...resolveDependencyPromises);
 		} else if (isPreload === RESOLVE_DEPENDENCIES) {
 			await loadAndResolveDependenciesPromise;
@@ -434,25 +489,32 @@ export class ModuleLoader {
 			return;
 		}
 		this.modulesWithLoadedDependencies.add(module);
+		// 并行完成静态依赖和异步依赖的解析工作
 		await Promise.all([
+			// 解析静态依赖
 			this.fetchStaticDependencies(module, resolveStaticDependencyPromises),
+			// 解析异步依赖
 			this.fetchDynamicDependencies(module, resolveDynamicDependencyPromises)
 		]);
+
 		module.linkImports();
 		// To handle errors when resolving dependencies or in moduleParsed
 		await loadAndResolveDependenciesPromise;
 	}
 
+	// 解析 resolve 后的 依赖
 	private fetchResolvedDependency(
 		source: string,
 		importer: string,
 		resolvedId: ResolvedId
 	): Promise<Module | ExternalModule> {
 		if (resolvedId.external) {
+			// 外部的依赖
 			const { external, id, moduleSideEffects, meta } = resolvedId;
 			if (!this.modulesById.has(id)) {
 				this.modulesById.set(
 					id,
+					// 实例化 ExternalModule
 					new ExternalModule(
 						this.options,
 						id,
@@ -467,28 +529,52 @@ export class ModuleLoader {
 			if (!(externalModule instanceof ExternalModule)) {
 				return error(errInternalIdCannotBeExternal(source, importer));
 			}
+
+			// 最后直接将实例化后的 ExternalModule 返回即可
 			return Promise.resolve(externalModule);
 		}
+
+		// 非外部依赖
+		// 也是调用 fetchModule 完成模块的递归解析
+		// fetchModule 内部会 new Module 实例化一个正常的 Module
 		return this.fetchModule(resolvedId, importer, false, false);
 	}
 
+	// 解析静态依赖
 	private async fetchStaticDependencies(
 		module: Module,
 		resolveStaticDependencyPromises: readonly ResolveStaticDependencyPromise[]
 	): Promise<void> {
-		for (const dependency of await Promise.all(
+		const dependencies = await Promise.all(
 			resolveStaticDependencyPromises.map(resolveStaticDependencyPromise =>
-				resolveStaticDependencyPromise.then(([source, resolvedId]) =>
-					this.fetchResolvedDependency(source, module.id, resolvedId)
-				)
+				resolveStaticDependencyPromise.then(([source, resolvedId]) => {
+					// source 是文件名，'./default'
+					// resolvedId 是 resolve 后的产物
+					// {
+					//   external: false,
+					//   id: "/Users/zhangjinjie/workspace/meils/github-projectx/rollup/examples/demo/default.js",
+					//   meta: {},
+					//   moduleSideEffects: true,
+					//   syntheticNamedExports: false,
+					// }
+
+					// 解析 Resolve 过后的 依赖
+					return this.fetchResolvedDependency(source, module.id, resolvedId);
+				})
 			)
-		)) {
+		);
+
+		for (const dependency of dependencies) {
+			// module 和 dependency 之间的关系
 			module.dependencies.add(dependency);
 			dependency.importers.push(module.id);
 		}
+
 		if (!this.options.treeshake || module.info.moduleSideEffects === 'no-treeshake') {
+			// 不需要开启 treeshake 的情况
 			for (const dependency of module.dependencies) {
 				if (dependency instanceof Module) {
+					// 给依赖打标记 importedFromNotTreeshaken
 					dependency.importedFromNotTreeshaken = true;
 				}
 			}
@@ -639,6 +725,7 @@ export class ModuleLoader {
 		importer: string | undefined,
 		implicitlyLoadedBefore: string | null
 	): Promise<Module> {
+		// resolve 模块 ID
 		const resolveIdResult = await resolveId(
 			unresolvedId,
 			importer,
@@ -649,6 +736,8 @@ export class ModuleLoader {
 			EMPTY_OBJECT,
 			true
 		);
+
+		// resolve 失败的情况
 		if (resolveIdResult == null) {
 			return error(
 				implicitlyLoadedBefore === null
@@ -666,6 +755,10 @@ export class ModuleLoader {
 					: errImplicitDependantCannotBeExternal(unresolvedId, implicitlyLoadedBefore)
 			);
 		}
+
+		// resolve success
+
+		// 从模块文件的绝对路径开始解析
 		return this.fetchModule(
 			this.getResolvedIdWithDefaults(
 				typeof resolveIdResult === 'object'

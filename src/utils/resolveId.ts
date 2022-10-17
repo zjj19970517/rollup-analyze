@@ -4,6 +4,18 @@ import { promises as fs } from './fs';
 import { basename, dirname, isAbsolute, resolve } from './path';
 import { resolveIdViaPlugins } from './resolveIdViaPlugins';
 
+/**
+ * 解析模块ID
+ * @param source 模块源码位置
+ * @param importer
+ * @param preserveSymlinks
+ * @param pluginDriver
+ * @param moduleLoaderResolveId
+ * @param skip
+ * @param customOptions
+ * @param isEntry
+ * @returns
+ */
 export async function resolveId(
 	source: string,
 	importer: string | undefined,

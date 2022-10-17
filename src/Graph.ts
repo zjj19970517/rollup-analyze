@@ -194,7 +194,6 @@ export default class Graph {
 			throw new Error('You must supply options.input to rollup');
 		}
 
-		debugger;
 		// console.log('[DEBUG]: 收集到', this.modulesById);
 		// addEntryModules 完成后， this.modulesById 就有值了，modulesById 收集的是整个程序所有的 Modules
 		// modulesById 以 Map 的形式存储所有收集到的 Module，key 为 moduleId

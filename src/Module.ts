@@ -722,6 +722,8 @@ export default class Module {
 		timeStart('generate ast', 3);
 
 		if (!ast) {
+			// 如果还没有 AST
+			// 解析出 AST
 			ast = this.tryParse();
 		}
 
@@ -733,6 +735,7 @@ export default class Module {
 		// can change that, but it makes sense to use it for the source file name
 		const fileName = this.id;
 
+		// magic-string 是 Rollup 作者写的一个关于字符串操作的库，这个库主要是对字符串一些常用方法进行了封装
 		this.magicString = new MagicString(code, {
 			filename: (this.excludeFromSourcemap ? null : fileName)!, // don't include plugin helpers in sourcemap
 			indentExclusionRanges: []
@@ -740,6 +743,7 @@ export default class Module {
 
 		timeStart('analyse ast', 3);
 
+		// 构建 AST 上下文对象，辅助完成对 AST 的分析和处理
 		this.astContext = {
 			addDynamicImport: this.addDynamicImport.bind(this),
 			addExport: this.addExport.bind(this),
@@ -769,9 +773,13 @@ export default class Module {
 			warn: this.warn.bind(this)
 		};
 
+		// 作用域
 		this.scope = new ModuleScope(this.graph.scope, this.astContext);
+		// 命名空间
 		this.namespace = new NamespaceVariable(this.astContext);
 		this.ast = new Program(ast, { context: this.astContext, type: 'Module' }, this.scope);
+
+		// 最后更新到 module.info.ast
 		this.info.ast = ast;
 
 		timeEnd('analyse ast', 3);
